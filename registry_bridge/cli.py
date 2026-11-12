@@ -50,6 +50,13 @@ def parser():
     commands.add_parser('rebuild')
     demo = commands.add_parser('demo')
     demo.add_argument('--fixture', required=True)
+    arrivals = commands.add_parser('arrivals')
+    arrivals.add_argument(
+        'action', choices=('analyze', 'hindcast', 'get', 'list', 'export', 'import', 'revise'),
+    )
+    arrivals.add_argument('--input')
+    arrivals.add_argument('--path')
+    arrivals.add_argument('--id', dest='analysis_id')
     return result
 
 
@@ -94,7 +101,33 @@ def dispatch(store, args):
         return service.call('system.rebuild')
     if args.command == 'demo':
         return run_demo(store, read_json(args.fixture))
+    if args.command == 'arrivals':
+        return run_arrivals(service, args)
     raise InvalidMessage('Unknown command')
+
+
+def run_arrivals(service, args):
+    if args.action in {'analyze', 'hindcast', 'revise'}:
+        parameters = read_json(args.input) if args.input else {}
+        operation = {
+            'analyze': 'arrival.analyze',
+            'hindcast': 'arrival.hindcast',
+            'revise': 'arrival.revise',
+        }[args.action]
+        return service.call(operation, parameters)
+    if args.action == 'get':
+        if not args.analysis_id:
+            raise InvalidMessage('arrivals get requires --id')
+        return service.call('arrival.get', {'analysis_id': args.analysis_id})
+    if args.action == 'list':
+        return service.call('arrival.list', {})
+    if args.action == 'export':
+        if not args.analysis_id or not args.path:
+            raise InvalidMessage('arrivals export requires --id and --path')
+        return service.call('arrival.export', {'analysis_id': args.analysis_id, 'path': args.path})
+    if not args.path:
+        raise InvalidMessage('arrivals import requires --path')
+    return service.call('arrival.import', {'path': args.path})
 
 
 def run_demo(store, fixture):

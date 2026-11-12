@@ -1,5 +1,7 @@
 import json
 
+from registry_bridge.analysis import exporting as arrival_exporting
+from registry_bridge.analysis import registry as arrival_registry
 from registry_bridge.errors import InvalidMessage
 from registry_bridge.feeds import importer, receiver
 from registry_bridge.feeds.message import decode_json, integer, strict_object
@@ -58,6 +60,13 @@ class RegistryService:
             'snapshot.create': self.snapshot_create,
             'snapshot.verify': self.snapshot_verify,
             'snapshot.compare': self.snapshot_compare,
+            'arrival.analyze': self.arrival_analyze,
+            'arrival.revise': self.arrival_revise,
+            'arrival.get': self.arrival_get,
+            'arrival.list': self.arrival_list,
+            'arrival.hindcast': self.arrival_hindcast,
+            'arrival.export': self.arrival_export,
+            'arrival.import': self.arrival_import,
         }
 
     def call(self, operation, parameters=None):
@@ -259,6 +268,48 @@ class RegistryService:
     def snapshot_compare(self, p):
         self.fields(p, ('left', 'right'))
         return exporting.compare_snapshots(**p)
+
+    def _arrival_fields(self):
+        return (
+            'issuer', 'start_week', 'end_week', 'knowledge_cutoff',
+        )
+
+    def _arrival_optional(self):
+        return (
+            'timezone', 'max_maturity_lag_weeks', 'min_history_weeks',
+            'bootstrap_samples', 'bootstrap_lower_quantile', 'bootstrap_upper_quantile',
+            'instability_threshold', 'allow_borrow', 'borrow_groups', 'seed',
+        )
+
+    def arrival_analyze(self, p):
+        self.fields(p, self._arrival_fields(), self._arrival_optional())
+        return arrival_registry.create_analysis(self.store, p)
+
+    def arrival_revise(self, p):
+        self.fields(p, self._arrival_fields(), (*self._arrival_optional(), 'reference_analysis_id'))
+        return arrival_registry.explain_revision(self.store, p)
+
+    def arrival_get(self, p):
+        self.fields(p, ('analysis_id',))
+        return arrival_registry.get_analysis(self.store, p['analysis_id'])
+
+    def arrival_list(self, p):
+        self.fields(p, (), ('kind', 'limit'))
+        if 'kind' in p and p['kind'] not in {'arrival_analysis', 'arrival_hindcast'}:
+            raise InvalidMessage('Unknown analysis kind')
+        return arrival_registry.list_analyses(self.store, **p)
+
+    def arrival_hindcast(self, p):
+        self.fields(p, self._arrival_fields(), (*self._arrival_optional(), 'horizon_weeks'))
+        return arrival_registry.hindcast(self.store, p, horizon_weeks=p.get('horizon_weeks'))
+
+    def arrival_export(self, p):
+        self.fields(p, ('analysis_id', 'path'))
+        return arrival_exporting.write_analysis(self.store, p['analysis_id'], p['path'])
+
+    def arrival_import(self, p):
+        self.fields(p, ('path',))
+        return arrival_exporting.import_analysis(self.store, p['path'])
 
     def execute_batch(self, requests, *, atomic=True):
         if not isinstance(requests, list) or len(requests) > 1000:

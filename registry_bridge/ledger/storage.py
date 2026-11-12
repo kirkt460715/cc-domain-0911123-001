@@ -5,7 +5,7 @@ from pathlib import Path
 
 from registry_bridge.errors import IntegrityFailure, InvalidMessage
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DDL = '''
 CREATE TABLE IF NOT EXISTS issuers(
  issuer TEXT PRIMARY KEY, display_name TEXT NOT NULL, enabled INTEGER NOT NULL,
@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS export_jobs(
  export_id TEXT PRIMARY KEY, consumer TEXT NOT NULL, lower_position INTEGER NOT NULL,
  upper_position INTEGER NOT NULL, digest TEXT NOT NULL, row_count INTEGER NOT NULL,
  created_at TEXT NOT NULL, acknowledged_at TEXT);
+CREATE TABLE IF NOT EXISTS arrival_analyses(
+ analysis_id TEXT PRIMARY KEY, kind TEXT NOT NULL, document TEXT NOT NULL,
+ input_fingerprint TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS arrival_analyses_kind ON arrival_analyses(kind, created_at);
 '''
 
 
@@ -92,7 +96,7 @@ class Store:
 
     def _initialize(self):
         version = self.connection.execute('PRAGMA user_version').fetchone()[0]
-        if version not in (0, SCHEMA_VERSION):
+        if version not in (0, 1, SCHEMA_VERSION):
             self.close()
             raise IntegrityFailure('Unsupported database schema', context={'version': version})
         self.connection.executescript(DDL)
